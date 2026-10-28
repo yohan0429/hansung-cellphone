@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>스마트폰 시뮬레이터</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lucide-react@0.383.0/dist/umd/lucide-react.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+<style>html,body{margin:0;background:#e2e8f0}</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+const { Globe, MessageCircle, Phone, MessageSquare, StickyNote, Settings, Wifi, BatteryFull, Signal, Delete, ChevronLeft, Sun, CloudSun, CalendarDays, PhoneMissed, Search, Lock, Droplets, Wind, Plus, Bluetooth, Moon, Bell, ChevronRight, Plane, Send, PhoneIncoming, PhoneOutgoing, Clock, X, Heart } = LucideReact;
+
+const PIN = "0921";
+
+/* ---------- shared data ---------- */
+const NOTIFS = [
+  { id: "kakao", app: "카카오톡", count: 3, ago: "4분 전", text: "형사님: 오늘 저녁 약속 잊지 마십시오.", Icon: MessageCircle, bg: "#FEE500", fg: "#3A1D1D" },
+  { id: "msg", app: "메시지", count: 7, ago: "1분 전", text: "[Web발신] 인증번호 안내 외 6건", Icon: MessageSquare, bg: "#34C759", fg: "#fff" },
+  { id: "call", app: "부재중 전화", count: 5, ago: "1시간 전", text: "이한울 외 4건의 부재중 전화", Icon: PhoneMissed, bg: "#FF3B30", fg: "#fff" },
+];
+
+/* ---------- small UI pieces ---------- */
+function Badge({ n }) {
+  if (!n) return null;
+  return (
+    <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center border-2 border-white">
+      {n}
+    </span>
+  );
+}
+
+function AppIcon({ label, Icon, bg, fg = "#fff", badge, onClick, hideLabel }) {
+  return (
+    <button onClick={onClick} className="flex flex-col items-center gap-1 active:scale-90 transition-transform">
+      <div className="relative w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg" style={{ background: bg, color: fg }}>
+        <Icon size={28} strokeWidth={2} />
+        <Badge n={badge} />
+      </div>
+      {!hideLabel && <span className="text-xs text-white font-medium drop-shadow">{label}</span>}
+    </button>
+  );
+}
+
+function StatusBar({ time, dark }) {
+  const c = dark ? "text-gray-900" : "text-white";
+  return (
+    <div className={`absolute top-0 inset-x-0 h-12 px-7 flex items-center justify-between z-30 pointer-events-none ${c}`}>
+      <span className="text-sm font-semibold">{time}</span>
+      <div className="flex items-center gap-1.5">
+        <Signal size={14} />
+        <Wifi size={14} />
+        <BatteryFull size={18} />
+      </div>
+    </div>
+  );
+}
+
+function AppHeader({ title, onBack, right }) {
+  return (
+    <div className="pt-12 pb-2 px-3 flex items-center justify-between bg-white border-b border-gray-100">
+      <button onClick={onBack} className="flex items-center text-blue-500 text-sm w-16">
+        <ChevronLeft size={20} />홈
+      </button>
+      <h2 className="font-semibold text-gray-900">{title}</h2>
+      <div className="w-16 flex justify-end">{right}</div>
+    </div>
+  );
+}
+
+/* ---------- PIN modal ---------- */
+function PinModal({ onSuccess, onClose }) {
+  const [input, setInput] = useState("");
+  const [shake, setShake] = useState(false);
+
+  const press = (d) => {
+    if (input.length >= 4 || shake) return;
+    const next = input + d;
+    setInput(next);
+    if (next.length === 4) {
+      setTimeout(() => {
+        if (next === PIN) {
+          onSuccess();
+        } else {
+          setShake(true);
+          setTimeout(() => { setShake(false); setInput(""); }, 450);
+        }
+      }, 150);
+    }
+  };
+
+  const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "del"];
+
+  return (
+    <div className="absolute inset-0 z-40 flex flex-col items-center justify-end pb-10 bg-black/60 backdrop-blur-xl">
+      <button onClick={onClose} className="absolute top-14 right-6 text-white/80 text-sm">취소</button>
+      <Lock className="text-white mb-3" size={22} />
+      <p className="text-white font-medium mb-5">암호를 입력하세요</p>
+      <div className={`flex gap-4 mb-10 ${shake ? "pin-shake" : ""}`}>
+        {[0, 1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className={`w-3.5 h-3.5 rounded-full border-2 transition-colors ${
+              i < input.length ? (shake ? "bg-red-400 border-red-400" : "bg-white border-white") : "border-white/70"
+            }`}
+          />
+        ))}
+      </div>
+      <div className="grid grid-cols-3 gap-x-6 gap-y-4">
+        {keys.map((k, i) =>
+          k === "" ? <div key={i} /> : k === "del" ? (
+            <button key={i} onClick={() => setInput(input.slice(0, -1))} className="w-16 h-16 flex items-center justify-center text-white">
+              <Delete size={24} />
+            </button>
+          ) : (
+            <button
+              key={i}
+              onClick={() => press(k)}
+              className="w-16 h-16 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/50 text-white text-2xl font-light transition-colors"
+            >
+              {k}
+            </button>
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Lock screen ---------- */
+function LockScreen({ time, onTap }) {
+  return (
+    <div
+      onClick={onTap}
+      className="absolute inset-0 cursor-pointer px-4 pt-20 text-white"
+      style={{ background: "#000000" }}
+    >
+      <div className="text-center mb-8">
+        <p className="text-sm font-medium opacity-90">10월 28일 수요일</p>
+        <p className="text-7xl font-light tracking-tight">{time}</p>
+      </div>
+      <div className="space-y-2.5">
+        {NOTIFS.map(({ id, app, count, ago, text, Icon, bg, fg }) => (
+          <div
+            key={id}
+            onClick={(e) => { e.stopPropagation(); onTap(); }}
+            className="flex items-center gap-3 p-3 rounded-2xl bg-white/20 backdrop-blur-md border border-white/20"
+          >
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: bg, color: fg }}>
+              <Icon size={18} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex justify-between text-xs">
+                <span className="font-semibold">{app} · {count}건</span>
+                <span className="opacity-70">{ago}</span>
+              </div>
+              <p className="text-xs opacity-90 truncate">{text}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="absolute bottom-10 inset-x-0 text-center text-xs opacity-70">화면을 탭하여 잠금 해제</p>
+    </div>
+  );
+}
+
+/* ---------- Home widgets ---------- */
+function Widgets({ open }) {
+  return (
+    <div className="space-y-2.5">
+      <button onClick={() => open("weather")} className="w-full text-left rounded-3xl p-4 text-white flex items-center justify-between bg-white/25 backdrop-blur-md border border-white/30">
+        <div>
+          <p className="text-xs opacity-90">서울시 송파구</p>
+          <p className="text-4xl font-light">18°</p>
+          <p className="text-xs opacity-90">구름 조금 · 최고 21° 최저 11°</p>
+        </div>
+        <CloudSun size={52} strokeWidth={1.5} />
+      </button>
+      <div className="grid grid-cols-2 gap-2.5">
+        <button onClick={() => open("dday")} className="rounded-3xl p-4 text-left bg-white/25 backdrop-blur-md border border-white/30 text-white flex flex-col justify-between h-28">
+          <span className="text-xs opacity-90">D-Day</span>
+          <span className="text-2xl font-black leading-none">L +231일</span>
+        </button>
+        <button onClick={() => open("calendar")} className="rounded-3xl p-4 text-left bg-white/90 h-28 flex flex-col justify-between">
+          <span className="text-xs font-bold text-red-500">10월 28일</span>
+          <div className="rounded-lg bg-red-50 px-2 py-1.5 text-xs font-semibold text-red-600">
+            <Heart size={12} className="inline mr-1 -mt-0.5" />데이트
+          </div>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Apps ---------- */
+/* ---------- Internet (naver.com mockup) ---------- */
+const RECENT_SEARCHES = ["해치 사건", "부부 동반 살인사건", "서울경찰청", "남성 넥타이핀"];
+
+function BrowserApp({ back }) {
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState("");
+  const [history, setHistory] = useState(RECENT_SEARCHES);
+
+  const shortcuts = [["메일", "#03C75A"], ["카페", "#16A34A"], ["블로그", "#22C55E"], ["지식iN", "#0EA5E9"], ["쇼핑", "#F97316"], ["지도", "#6366F1"], ["뉴스", "#EF4444"], ["더보기", "#6B7280"]];
+  const news = ["서울청, 연쇄 사건 수사 속도…관계자 소환 조사", "10월 마지막 주 전국 아침 기온 뚝 '쌀쌀'", "올가을 첫 한파주의보 가능성…외출 시 겉옷 필수", "검찰·경찰 수사권 조정 이후 협력 사례 늘어"];
+
+  if (searching) {
+    return (
+      <div className="h-full bg-white flex flex-col">
+        <div className="pt-12 pb-3 px-3 flex items-center gap-2 border-b border-gray-100">
+          <button onClick={() => setSearching(false)} className="text-gray-700"><ChevronLeft size={22} /></button>
+          <div className="flex-1 flex items-center gap-2 rounded-full px-3 py-2 border-2" style={{ borderColor: "#03C75A" }}>
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="검색어를 입력하세요"
+              className="flex-1 text-sm outline-none bg-transparent"
+            />
+            {query && <button onClick={() => setQuery("")}><X size={16} className="text-gray-400" /></button>}
+            <Search size={16} style={{ color: "#03C75A" }} />
+          </div>
+        </div>
+        <div className="flex items-center justify-between px-4 pt-4 pb-2">
+          <span className="text-sm font-semibold text-gray-900">최근 검색어</span>
+          <button onClick={() => setHistory([])} className="text-xs text-gray-400">전체 삭제</button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {history.length === 0 && <p className="text-center text-xs text-gray-400 mt-10">최근 검색 기록이 없습니다.</p>}
+          {history.map((h) => (
+            <div key={h} className="flex items-center gap-3 px-4 py-3 border-b border-gray-50">
+              <Clock size={16} className="text-gray-400" />
+              <button onClick={() => setQuery(h)} className="flex-1 text-left text-sm text-gray-800">{h}</button>
+              <button onClick={() => setHistory(history.filter((x) => x !== h))}><X size={14} className="text-gray-300" /></button>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full bg-white flex flex-col">
+      <div className="pt-12 pb-2 px-3 flex items-center justify-between bg-gray-50 border-b border-gray-100">
+        <button onClick={back} className="flex items-center text-blue-500 text-sm w-12"><ChevronLeft size={20} />홈</button>
+        <div className="flex items-center gap-1 text-xs text-gray-500"><Lock size={11} />naver.com</div>
+        <div className="w-12" />
+      </div>
+      <div className="flex-1 overflow-y-auto pb-8">
+        <div className="px-4 pt-6 text-center">
+          <h1 className="text-4xl font-black tracking-tight" style={{ color: "#03C75A" }}>NAVER</h1>
+          <button
+            onClick={() => setSearching(true)}
+            className="mt-4 w-full flex items-center justify-between rounded-full px-4 py-3 bg-white border-2 text-left"
+            style={{ borderColor: "#03C75A" }}
+          >
+            <span className="text-sm text-gray-400">검색어를 입력하세요</span>
+            <Search size={18} style={{ color: "#03C75A" }} />
+          </button>
+        </div>
+        <div className="grid grid-cols-4 gap-y-4 px-4 mt-6">
+          {shortcuts.map(([n, c]) => (
+            <div key={n} className="flex flex-col items-center gap-1">
+              <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-white" style={{ background: c }}><Globe size={20} /></div>
+              <span className="text-xs text-gray-700">{n}</span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-6 mx-4 rounded-2xl border border-gray-100 shadow-sm">
+          <p className="px-4 pt-3 pb-1 text-sm font-bold text-gray-900">주요 뉴스</p>
+          {news.map((n, i) => (
+            <div key={i} className="px-4 py-2.5 border-t border-gray-50 text-xs text-gray-700 leading-snug">{n}</div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- KakaoTalk chat with bot logic ---------- */
+const INITIAL_CHAT = [
+  ["them", "날 춥습니다."],
+  ["them", "제발 정장만 입지 마시고, 코트라도 걸치세요."],
+  ["me", "예."],
+  ["them", "검사님, 어디십니까?"],
+  ["me", "공주요."],
+  ["them", "아, 예. 공주님, 어디십니까?"],
+  ["me", "미쳤어요? 충청남도 공주라고요."],
+  ["them", "금일 19시 데이트 안 잊으셨죠? 이번에도 미루면 지검으로 찾아가서 깽판 칠 겁니다."],
+  ["me", "ㅎㅇ"],
+  ["them", "예, 저도 하이요."],
+  ["me", "?"],
+  ["me", "확인이라고요, 확인."],
+].map(([from, text], id) => ({ id, from, text }));
+
+// 형사님 프로필 사진 (128x128 JPEG, base64)
+const DETECTIVE_PROFILE = "data:image/jpeg;base64,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";
+
+const CALL_NAMES = ["형사님", "이 형사님", "부팀장", "부팀장님"];
+const CALL_REPLIES = ["예, 무슨 일 있습니까?", "예, 검사님.", "연락 보내셨어요?"];
+
+function KakaoApp({ back }) {
+  const [messages, setMessages] = useState(INITIAL_CHAT);
+  const [text, setText] = useState("");
+  const [typing, setTyping] = useState(false);
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, typing]);
+
+  const pickReply = (msg) => {
+    // 더 구체적인 문구("보고 싶습니다")를 먼저 검사합니다.
+    if (msg.includes("보고 싶습니다")) return "저도요.";
+    if (CALL_NAMES.some((n) => msg.includes(n))) return CALL_REPLIES[Math.floor(Math.random() * CALL_REPLIES.length)];
+    return "예, 알겠습니다.";
+  };
+
+  const send = () => {
+    const msg = text.trim();
+    if (!msg) return;
+    setMessages((m) => [...m, { id: Date.now(), from: "me", text: msg }]);
+    setText("");
+    setTyping(true);
+    const reply = pickReply(msg);
+    setTimeout(() => {
+      setTyping(false);
+      setMessages((m) => [...m, { id: Date.now() + 1, from: "them", text: reply }]);
+    }, 900);
+  };
+
+  return (
+    <div className="h-full flex flex-col" style={{ background: "#B2C7D9" }}>
+      <div className="pt-12 pb-2 px-3 flex items-center gap-2 text-gray-900" style={{ background: "#B2C7D9" }}>
+        <button onClick={back}><ChevronLeft size={24} /></button>
+        <span className="font-bold">형사님</span>
+        <Search size={18} className="ml-auto" />
+      </div>
+      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+        <p className="mx-auto w-fit text-xs text-white bg-black/20 rounded-full px-3 py-0.5">2026년 10월 28일 수요일</p>
+        {messages.map((m) =>
+          m.from === "me" ? (
+            <div key={m.id} className="flex justify-end">
+              <div className="max-w-56 rounded-2xl rounded-tr-sm px-3 py-2 text-sm text-gray-900" style={{ background: "#FEE500" }}>{m.text}</div>
+            </div>
+          ) : (
+            <div key={m.id} className="flex items-start gap-2">
+              <img src={DETECTIVE_PROFILE} alt="형사님" className="w-9 h-9 rounded-2xl object-cover shrink-0" />
+              <div>
+                <p className="text-xs text-gray-700 mb-0.5">형사님</p>
+                <div className="max-w-56 rounded-2xl rounded-tl-sm px-3 py-2 text-sm text-gray-900 bg-white">{m.text}</div>
+              </div>
+            </div>
+          )
+        )}
+        {typing && (
+          <div className="flex items-start gap-2">
+            <img src={DETECTIVE_PROFILE} alt="형사님" className="w-9 h-9 rounded-2xl object-cover shrink-0" />
+            <div className="rounded-2xl rounded-tl-sm px-3 py-2 text-sm text-gray-400 bg-white">입력 중…</div>
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+      <div className="bg-white px-3 pt-2 pb-8 flex items-center gap-2">
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && send()}
+          placeholder="메시지 입력"
+          className="flex-1 bg-gray-100 rounded-full px-4 py-2 text-sm outline-none"
+        />
+        <button
+          onClick={send}
+          disabled={!text.trim()}
+          className="w-9 h-9 rounded-full flex items-center justify-center disabled:opacity-40"
+          style={{ background: "#FEE500", color: "#3A1D1D" }}
+          aria-label="전송"
+        >
+          <Send size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Phone: recent call log ---------- */
+const CALL_LOG = [
+  ["형사님", "발신", "수요일"],
+  ["이한울", "발신", "수요일"],
+  ["형사님", "수신", "수요일"],
+  ["형사님", "수신", "수요일"],
+  ["010-1234-5678", "수신", "수요일"],
+  ["서도철(서울청 1계 2팀 형사)", "수신", "수요일"],
+  ["형사님", "발신", "화요일"],
+  ["02-123-3522", "부재중", "화요일"],
+];
+
+function PhoneApp({ back }) {
+  const style = {
+    발신: { Icon: PhoneOutgoing, color: "text-green-600", name: "text-gray-900" },
+    수신: { Icon: PhoneIncoming, color: "text-blue-500", name: "text-gray-900" },
+    부재중: { Icon: PhoneMissed, color: "text-red-500", name: "text-red-500" },
+  };
+  return (
+    <div className="h-full bg-white flex flex-col">
+      <AppHeader title="최근 기록" onBack={back} />
+      <div className="flex-1 overflow-y-auto pb-8">
+        {CALL_LOG.map(([name, kind, day], i) => {
+          const s = style[kind];
+          return (
+            <div key={i} className="flex items-center gap-3 px-4 py-3 border-b border-gray-50">
+              <s.Icon size={18} className={s.color} />
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm font-medium truncate ${s.name}`}>{name}</p>
+                <p className="text-xs text-gray-400">{kind === "부재중" ? "부재중 전화" : `${kind} 통화`}</p>
+              </div>
+              <span className="text-xs text-gray-400 shrink-0">{day}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Messages: list + thread ---------- */
+const THREAD = [
+  ["금요일", [["형사", "바쁘십니까?"], ["검사", "예, 바빠요. 용건은요?"]]],
+  ["월요일", [["형사", "검사님, 이번 사건 영장이요. 빨리. 급합니다."], ["검사", "나는 안 급한데요. 절차대로 하세요."]]],
+  ["화요일", [["형사", "전화 좀 받아 보시죠."], ["검사", "바쁩니다."]]],
+  ["수요일", [["형사", "오늘 데이트 어디서 할 겁니까?"], ["검사", "어디겠어요, 매번 하던 데죠."]]],
+];
+
+function MessagesApp({ back }) {
+  const [open, setOpen] = useState(false);
+
+  if (open) {
+    return (
+      <div className="h-full bg-white flex flex-col">
+        <AppHeader title="형사님" onBack={() => setOpen(false)} />
+        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 pb-8">
+          {THREAD.map(([day, msgs]) => (
+            <div key={day} className="space-y-2">
+              <p className="text-center text-xs text-gray-400">{day}</p>
+              {msgs.map(([who, t], i) => (
+                <div key={i} className={`flex ${who === "검사" ? "justify-end" : "justify-start"}`}>
+                  <div className={`max-w-56 rounded-2xl px-3 py-2 text-sm ${who === "검사" ? "bg-blue-500 text-white rounded-br-sm" : "bg-gray-200 text-gray-900 rounded-bl-sm"}`}>
+                    {t}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const list = [
+    ["+82 1234-5678", "어제", "[Web 발신] 서울은 여전히 서울이고, 나는 여전히 나야. 너는 여전히 너야?", false],
+    ["형사님", "수요일", "바쁘세요?", true],
+  ];
+  return (
+    <div className="h-full bg-white flex flex-col">
+      <AppHeader title="메시지" onBack={back} />
+      <div className="flex-1 overflow-y-auto">
+        {list.map(([n, t, p, clickable]) => (
+          <button
+            key={n}
+            onClick={() => clickable && setOpen(true)}
+            className="w-full flex items-center gap-3 px-4 py-3 border-b border-gray-50 text-left active:bg-gray-50"
+          >
+            <div className="w-10 h-10 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center font-bold text-sm shrink-0">
+              {n.startsWith("+") ? "#" : n[0]}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex justify-between">
+                <p className="text-sm font-semibold text-gray-900">{n}</p>
+                <span className="text-xs text-gray-400">{t}</span>
+              </div>
+              <p className="text-xs text-gray-500 line-clamp-2">{p}</p>
+            </div>
+            {clickable && <ChevronRight size={16} className="text-gray-300" />}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Memo: note list + detail ---------- */
+function MemoApp({ back }) {
+  const [notes, setNotes] = useState([
+    { id: 1, title: "일정", body: "10월 20일 20시 강남 묵원 레스토랑\n10월 22일 13시 서울청 지상 주차장\n10월 23일 16시 서울청 지하 주차장" },
+  ]);
+  const [openId, setOpenId] = useState(null);
+  const note = notes.find((n) => n.id === openId);
+
+  if (note) {
+    return (
+      <div className="h-full bg-yellow-50 flex flex-col">
+        <AppHeader title="메모" onBack={() => setOpenId(null)} />
+        <div className="px-5 pt-5 flex-1 flex flex-col pb-8">
+          <h3 className="text-2xl font-bold text-gray-900 mb-3">{note.title}</h3>
+          <textarea
+            value={note.body}
+            onChange={(e) => setNotes(notes.map((n) => (n.id === note.id ? { ...n, body: e.target.value } : n)))}
+            className="flex-1 bg-transparent outline-none resize-none text-base text-gray-800 leading-relaxed"
+          />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full bg-yellow-50 flex flex-col">
+      <AppHeader
+        title="메모"
+        onBack={back}
+        right={
+          <button onClick={() => { const id = Date.now(); setNotes([{ id, title: "새 메모", body: "" }, ...notes]); setOpenId(id); }} className="text-yellow-600">
+            <Plus size={20} />
+          </button>
+        }
+      />
+      <div className="p-4 space-y-2">
+        {notes.map((n) => (
+          <button key={n.id} onClick={() => setOpenId(n.id)} className="w-full text-left bg-white rounded-xl p-3 shadow-sm">
+            <p className="text-sm font-semibold text-gray-900">{n.title}</p>
+            <p className="text-xs text-gray-500 truncate">{n.body.split("\n")[0] || "추가 텍스트 없음"}</p>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Toggle({ on, set }) {
+  return (
+    <button onClick={() => set(!on)} className={`w-11 h-6 rounded-full p-0.5 transition-colors ${on ? "bg-green-500" : "bg-gray-300"}`}>
+      <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${on ? "translate-x-5" : ""}`} />
+    </button>
+  );
+}
+
+function SettingsApp({ back }) {
+  const [s, setS] = useState({ plane: false, wifi: true, bt: true, dnd: false, notif: true });
+  const rows = [
+    ["plane", "비행기 모드", Plane, "bg-orange-500"],
+    ["wifi", "Wi-Fi", Wifi, "bg-blue-500"],
+    ["bt", "Bluetooth", Bluetooth, "bg-blue-600"],
+    ["dnd", "방해 금지", Moon, "bg-indigo-500"],
+    ["notif", "알림", Bell, "bg-red-500"],
+  ];
+  return (
+    <div className="h-full bg-gray-100 flex flex-col">
+      <AppHeader title="설정" onBack={back} />
+      <div className="m-4 bg-white rounded-2xl overflow-hidden">
+        {rows.map(([k, label, Icon, bg]) => (
+          <div key={k} className="flex items-center gap-3 px-3 py-3 border-b border-gray-100 last:border-0">
+            <div className={`w-8 h-8 rounded-lg ${bg} text-white flex items-center justify-center`}><Icon size={16} /></div>
+            <span className="flex-1 text-sm text-gray-900">{label}</span>
+            <Toggle on={s[k]} set={(v) => setS({ ...s, [k]: v })} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WeatherApp({ back }) {
+  const hours = [["지금", 18], ["15시", 20], ["18시", 17], ["21시", 14], ["00시", 12]];
+  return (
+    <div className="h-full text-white flex flex-col" style={{ background: "linear-gradient(180deg,#38bdf8,#6366f1)" }}>
+      <div className="pt-12 px-3"><button onClick={back} className="flex items-center text-sm"><ChevronLeft size={20} />홈</button></div>
+      <div className="text-center mt-6">
+        <p className="text-xl">서울시 송파구</p>
+        <p className="text-7xl font-extralight my-2">18°</p>
+        <p>구름 조금</p>
+      </div>
+      <div className="mx-4 mt-8 rounded-2xl bg-white/20 p-4 flex justify-between">
+        {hours.map(([h, t]) => (
+          <div key={h} className="text-center text-sm"><p className="opacity-80">{h}</p><Sun size={18} className="mx-auto my-2" /><p>{t}°</p></div>
+        ))}
+      </div>
+      <div className="mx-4 mt-3 grid grid-cols-2 gap-3 text-sm">
+        <div className="rounded-2xl bg-white/20 p-3 flex items-center gap-2"><Droplets size={16} />습도 54%</div>
+        <div className="rounded-2xl bg-white/20 p-3 flex items-center gap-2"><Wind size={16} />바람 3m/s</div>
+      </div>
+    </div>
+  );
+}
+
+function DDayApp({ back }) {
+  return (
+    <div className="h-full bg-gray-900 text-white flex flex-col">
+      <div className="pt-12 px-3"><button onClick={back} className="flex items-center text-sm text-blue-400"><ChevronLeft size={20} />홈</button></div>
+      <div className="flex-1 flex flex-col items-center justify-center">
+        <p className="text-sm text-gray-400 mb-2">D-Day</p>
+        <p className="text-6xl font-black">L +231일</p>
+      </div>
+    </div>
+  );
+}
+
+function CalendarApp({ back }) {
+  const [selected, setSelected] = useState(28);
+  const days = ["일", "월", "화", "수", "목", "금", "토"];
+  // 2026년 10월은 목요일(4)에 시작합니다.
+  const cells = [...Array(4).fill(null), ...Array.from({ length: 31 }, (_, i) => i + 1)];
+  const dayName = days[(4 + selected - 1) % 7];
+
+  return (
+    <div className="h-full bg-white flex flex-col">
+      <AppHeader title="2026년 10월" onBack={back} right={<CalendarDays size={18} className="text-red-500" />} />
+      <div className="px-3 pt-3">
+        <div className="grid grid-cols-7 text-center text-xs mb-1">
+          {days.map((d, i) => (
+            <span key={d} className={i === 0 ? "text-red-400" : i === 6 ? "text-blue-400" : "text-gray-400"}>{d}</span>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-y-1">
+          {cells.map((d, i) => (
+            <button
+              key={i}
+              disabled={!d}
+              onClick={() => setSelected(d)}
+              className="h-12 flex flex-col items-center pt-1"
+            >
+              {d && (
+                <>
+                  <span
+                    className={`w-7 h-7 rounded-full flex items-center justify-center text-sm ${
+                      d === 28 ? "bg-red-500 text-white font-bold" : d === selected ? "bg-gray-200 text-gray-900" : i % 7 === 0 ? "text-red-400" : "text-gray-800"
+                    }`}
+                  >
+                    {d}
+                  </span>
+                  {d === 28 && <span className="mt-0.5 text-xs leading-none font-semibold text-red-500">데이트</span>}
+                </>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="mt-3 mx-3 rounded-2xl bg-gray-50 p-4 flex-1">
+        <p className="text-sm font-semibold text-gray-900 mb-3">10월 {selected}일 {dayName}요일</p>
+        {selected === 28 ? (
+          <div className="flex items-center gap-3 rounded-xl bg-white p-3 border-l-4 border-red-500 shadow-sm">
+            <Heart size={18} className="text-red-500" />
+            <div>
+              <p className="text-sm font-bold text-gray-900">데이트</p>
+              <p className="text-xs text-gray-500">종일 일정</p>
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400">등록된 일정이 없습니다.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Home screen ---------- */
+function HomeScreen({ open }) {
+  return (
+    <div className="absolute inset-0 pt-14 px-4" style={{ background: "#000000" }}>
+      <Widgets open={open} />
+      <div className="grid grid-cols-4 gap-y-5 mt-6">
+        <AppIcon label="인터넷" Icon={Globe} bg="#4F46E5" onClick={() => open("browser")} />
+        <AppIcon label="카카오톡" Icon={MessageCircle} bg="#FEE500" fg="#3A1D1D" badge={3} onClick={() => open("kakao")} />
+      </div>
+      <div className="absolute bottom-7 inset-x-3 h-20 rounded-3xl bg-white/25 backdrop-blur-xl border border-white/30 flex items-center justify-around">
+        <AppIcon hideLabel Icon={Phone} bg="#34C759" badge={5} onClick={() => open("phone")} />
+        <AppIcon hideLabel Icon={MessageSquare} bg="#0A84FF" badge={7} onClick={() => open("messages")} />
+        <AppIcon hideLabel Icon={StickyNote} bg="#FBBF24" fg="#78350F" onClick={() => open("memo")} />
+        <AppIcon hideLabel Icon={Settings} bg="#6B7280" onClick={() => open("settings")} />
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Root ---------- */
+function PhoneSimulator() {
+  const [locked, setLocked] = useState(true);
+  const [showPin, setShowPin] = useState(false);
+  const [app, setApp] = useState(null);
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const time = now.toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit", hour12: false });
+  const goHome = () => setApp(null);
+  const lightStatus = locked || !app || ["weather", "dday"].includes(app);
+
+  const apps = {
+    browser: BrowserApp, kakao: KakaoApp, phone: PhoneApp, messages: MessagesApp,
+    memo: MemoApp, settings: SettingsApp, weather: WeatherApp, dday: DDayApp, calendar: CalendarApp,
+  };
+  const Current = app ? apps[app] : null;
+
+  return (
+    <div className="min-h-screen w-full bg-slate-200 flex items-center justify-center p-4">
+      <style>{`
+        @keyframes pinShake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-10px)} 40%{transform:translateX(10px)} 60%{transform:translateX(-6px)} 80%{transform:translateX(6px)} }
+        .pin-shake { animation: pinShake 0.45s ease-in-out; }
+      `}</style>
+
+      {/* Device shell */}
+      <div className="relative">
+        <button
+          onClick={() => { setLocked(true); setApp(null); setShowPin(false); }}
+          aria-label="잠금"
+          className="absolute -right-1 top-32 w-1.5 h-16 rounded-r bg-red-900 hover:bg-red-800"
+        />
+        <div className="rounded-3xl bg-red-800 p-3 shadow-2xl" style={{ borderRadius: 56 }}>
+          <div className="relative overflow-hidden bg-black" style={{ width: 340, height: 700, borderRadius: 44 }}>
+            {/* Dynamic island */}
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 w-28 h-7 rounded-full bg-black z-50 flex items-center justify-end pr-3">
+              <div className="w-2.5 h-2.5 rounded-full bg-slate-800" />
+            </div>
+
+            <StatusBar time={time} dark={!lightStatus} />
+
+            {/* Screen content */}
+            {locked ? (
+              <LockScreen time={time} onTap={() => setShowPin(true)} />
+            ) : Current ? (
+              <div className="absolute inset-0"><Current back={goHome} /></div>
+            ) : (
+              <HomeScreen open={setApp} />
+            )}
+
+            {locked && showPin && (
+              <PinModal
+                onClose={() => setShowPin(false)}
+                onSuccess={() => { setLocked(false); setShowPin(false); }}
+              />
+            )}
+
+            {/* Home bar / swipe-to-home */}
+            <button
+              onClick={goHome}
+              aria-label="홈으로"
+              className="absolute bottom-0 inset-x-0 h-7 z-50 flex items-end justify-center pb-2"
+            >
+              <div className={`w-32 h-1.5 rounded-full ${lightStatus ? "bg-white/90" : "bg-gray-900"}`} />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<PhoneSimulator />);
+</script>
+</body>
+</html>
